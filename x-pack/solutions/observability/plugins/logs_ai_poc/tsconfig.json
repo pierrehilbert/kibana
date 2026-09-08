@@ -1,0 +1,15 @@
+{
+  "extends": "@kbn/tsconfig-base/tsconfig.json",
+  "compilerOptions": {
+    "outDir": "target/types"
+  },
+  "include": ["public/**/*", "server/**/*", "*.ts", "*.tsx"],
+  "kbn_references": [
+    "@kbn/core",
+    "@kbn/kibana-react-plugin",
+    "@kbn/react-kibana-context-render",
+    "@kbn/agent-builder-common",
+    "@kbn/agent-builder-server",
+    "@kbn/agent-builder-browser"
+  ]
+}

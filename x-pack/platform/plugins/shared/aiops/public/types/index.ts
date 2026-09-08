@@ -24,7 +24,9 @@ import type { CPSPluginStart } from '@kbn/cps/public/types';
 import type { CoreSetup } from '@kbn/core/public';
 import type { ChangePointDetectionSharedComponent } from '../shared_components';
 
+import type { FC } from 'react';
 import type { LogCategorizationEmbeddableWrapperProps } from '../components/log_categorization/log_categorization_for_embeddable/log_categorization_for_discover_wrapper';
+import type { LogRateAnalysisContentWrapperProps } from '../components/log_rate_analysis/log_rate_analysis_content/log_rate_analysis_content_wrapper';
 
 export interface AiopsPluginSetupDeps {
   embeddable: EmbeddableSetup;
@@ -55,6 +57,7 @@ export interface AiopsPluginStart {
   getPatternAnalysisAvailable: () => Promise<(dataView: DataView) => boolean>;
   PatternAnalysisComponent: React.ComponentType<LogCategorizationEmbeddableWrapperProps>;
   ChangePointDetectionComponent: ChangePointDetectionSharedComponent;
+  LogRateAnalysisContentComponent: FC<LogRateAnalysisContentWrapperProps>;
 }
 
 export type AiopsCoreSetup = CoreSetup<AiopsPluginStartDeps, AiopsPluginStart>;

@@ -42,7 +42,6 @@ import { ScopedServicesProvider } from '../../../../components/scoped_services_p
 import { useUnifiedHistogramRuntimeState } from './use_unified_histogram_runtime_state';
 import { useUnifiedHistogramCommon } from './use_unified_histogram_common';
 import type { ChartSectionConfiguration } from '../../../../context_awareness/types';
-import { useIsEsqlMode } from '../../hooks/use_is_esql_mode';
 
 export type ChartPortalNode = HtmlPortalNode;
 export type ChartPortalNodes = Record<string, ChartPortalNode>;
@@ -144,18 +143,11 @@ const ChartsWrapper = ({ panelsToggle }: UnifiedHistogramChartProps) => {
   const currentTabId = useCurrentTabSelector((tab) => tab.id);
   const getChartConfigAccessor = useProfileAccessor('getChartSectionConfiguration');
 
-  const isEsqlMode = useIsEsqlMode();
   const chartSectionConfig = useMemo<ChartSectionConfiguration>(() => {
-    if (!isEsqlMode) {
-      return {
-        replaceDefaultChart: false,
-      };
-    }
-
     return getChartConfigAccessor(() => ({
       replaceDefaultChart: false,
     }))();
-  }, [getChartConfigAccessor, isEsqlMode]);
+  }, [getChartConfigAccessor]);
 
   useEffect(() => {
     const histogramConfig$ = selectTabRuntimeState(

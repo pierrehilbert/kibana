@@ -113,6 +113,8 @@ export const AGENT_BUILDER_BUILTIN_TOOLS = [
 
   // Platform – Context Engine
   `${internalNamespaces.platformContextEngine}.save_automation`,
+  // Logs AI POC
+  'logs_ai_poc.get_logs',
 
   // Workflows
   `${internalNamespaces.workflows}.validate_workflow`,
@@ -243,6 +245,7 @@ export const AGENT_BUILDER_BUILTIN_SKILLS = [
   'observability.rca',
   'observability.investigation',
   'observability.service-map',
+  'logs-ai-poc-investigation',
 
   // ML
   `${internalNamespaces.ml}.anomaly-detection`,

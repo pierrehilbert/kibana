@@ -214,3 +214,16 @@ src/platform/plugins/shared/workflows_execution_engine/docs/parallel_step_p1_sco
 src/platform/plugins/shared/workflows_execution_engine/docs/parallel_step_nested_flow_control_tradeoff.md
 
 .ralph/
+
+# Ignore Chromium Path
+x-pack/plugins/screenshotting/chromium/chrome-mac/
+x-pack/plugins/screenshotting/chromium/chrome-linux/
+x-pack/plugins/screenshotting/chromium/chrome-win/  
+
+# Ignore Bazel
+bazel-*
+.bazelrc
+.bazelrc.cache
+
+# Ignore yarn
+.yarn/

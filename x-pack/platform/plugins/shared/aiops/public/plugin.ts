@@ -8,7 +8,10 @@
 import type { CoreStart, Plugin } from '@kbn/core/public';
 
 import { getChangePointDetectionComponent } from './shared_components';
-import { LogCategorizationForDiscover as PatternAnalysisComponent } from './shared_lazy_components';
+import {
+  LogCategorizationForDiscover as PatternAnalysisComponent,
+  LogRateAnalysisContent as LogRateAnalysisContentComponent,
+} from './shared_lazy_components';
 import type {
   AiopsPluginSetup,
   AiopsPluginSetupDeps,
@@ -52,6 +55,7 @@ export class AiopsPlugin
         return getPatternAnalysisAvailable(core.application);
       },
       PatternAnalysisComponent,
+      LogRateAnalysisContentComponent,
     };
   }
 

@@ -880,6 +880,7 @@
     "@kbn/lock-manager": "link:src/platform/packages/shared/kbn-lock-manager",
     "@kbn/logging": "link:src/platform/packages/shared/kbn-logging",
     "@kbn/logging-mocks": "link:src/platform/packages/shared/kbn-logging-mocks",
+    "@kbn/logs-ai-poc-plugin": "link:x-pack/solutions/observability/plugins/logs_ai_poc",
     "@kbn/logs-data-access-plugin": "link:x-pack/platform/plugins/shared/logs_data_access",
     "@kbn/logs-overview": "link:x-pack/platform/packages/shared/logs-overview",
     "@kbn/logs-shared-plugin": "link:x-pack/platform/plugins/shared/logs_shared",

@@ -1,0 +1,14 @@
+{
+  "type": "plugin",
+  "id": "@kbn/logs-ai-poc-plugin",
+  "owner": ["@elastic/actionable-obs-team"],
+  "group": "observability",
+  "visibility": "private",
+  "plugin": {
+    "id": "logsAiPoc",
+    "browser": true,
+    "server": true,
+    "requiredPlugins": ["agentBuilder"],
+    "requiredBundles": ["kibanaReact"]
+  }
+}
