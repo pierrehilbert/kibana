@@ -7,7 +7,7 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { css } from '@emotion/react';
 import {
   EuiAccordion,
@@ -67,6 +67,11 @@ import {
   truncate,
 } from './logs_insights_utils';
 
+const ERROR_LEVEL_VALUES = ['error', 'ERROR', 'critical', 'CRITICAL'] as const;
+const MAX_DISPLAYED_OUTLIERS = 8;
+/** Duration of a single CHANGE_POINT bucket in milliseconds (30 minutes). */
+const SPIKE_BUCKET_DURATION_MS = 30 * 60 * 1000;
+
 const listCss = css({
   margin: 0,
   paddingLeft: '1em',
@@ -92,6 +97,8 @@ const LogRateAnalysisFlyout = ({ fetchParams, services, onClose }: LogRateAnalys
   const periodResolution = useMemo(
     () => resolvePreviousPeriodTimeRange(timeRange),
     // eslint-disable-next-line react-hooks/exhaustive-deps
+    // timeRange is an object that changes reference on every render; listing the primitive
+    // from/to strings avoids spurious re-runs while still reacting to actual time changes.
     [timeRange.from, timeRange.to]
   );
 
@@ -138,7 +145,10 @@ const LogRateAnalysisFlyout = ({ fetchParams, services, onClose }: LogRateAnalys
         <LogRateAnalysisContentComponent
           dataView={dataView}
           appContextValue={
-            // Same cast pattern used by Discover's pattern analysis table.
+            // discoverServices is structurally compatible with AiopsAppContextValue but TypeScript
+            // cannot verify this across package boundaries. The cast is safe: AiopsAppContextValue
+            // only reads properties that Discover's service bag provides.
+            // Same pattern used by Discover's log pattern analysis table.
             { embeddingOrigin: 'discover', ...discoverServices } as unknown as AiopsAppContextValue
           }
           timeRange={momentTimeRange}
@@ -196,6 +206,14 @@ export const LogsInsightsPanel = (props: ChartSectionProps) => {
     Array<{ field: string; entries: Array<{ value: string; count: number }> }>
   >([]);
   const [cohortBreakdownLoading, setCohortBreakdownLoading] = useState(false);
+  const cohortBreakdownAbortRef = useRef<AbortController | null>(null);
+
+  // Abort any in-flight cohort breakdown when the component unmounts.
+  useEffect(() => {
+    return () => {
+      cohortBreakdownAbortRef.current?.abort();
+    };
+  }, []);
 
   const applyErrorLevelFilter = useCallback(() => {
     const filter: Filter = {
@@ -207,7 +225,7 @@ export const LogsInsightsPanel = (props: ChartSectionProps) => {
         index: fetchParams.dataView?.id,
       },
       query: {
-        terms: { 'log.level': ['error', 'ERROR', 'critical', 'CRITICAL'] },
+        terms: { 'log.level': ERROR_LEVEL_VALUES },
       },
     };
     discoverServices.data.query.filterManager.addFilters(filter);
@@ -278,7 +296,7 @@ export const LogsInsightsPanel = (props: ChartSectionProps) => {
           disabled: false,
           index: fetchParams.dataView?.id,
         },
-        query: { terms: { 'log.level': ['error', 'ERROR', 'critical', 'CRITICAL'] } },
+        query: { terms: { 'log.level': ERROR_LEVEL_VALUES } },
       };
       discoverServices.data.query.filterManager.addFilters([termFilter, errorLevelFilter]);
     },
@@ -299,7 +317,7 @@ export const LogsInsightsPanel = (props: ChartSectionProps) => {
       cp.record_count > best.record_count ? cp : best
     );
 
-    const spikeEnd = new Date(new Date(topSpike.bucket).getTime() + 30 * 60 * 1000).toISOString();
+    const spikeEnd = new Date(new Date(topSpike.bucket).getTime() + SPIKE_BUCKET_DURATION_MS).toISOString();
     const spikeTimeRange = { from: topSpike.bucket, to: spikeEnd };
 
     // Pass only the user's non-time filters — the query uses its own WHERE clause for time.
@@ -309,6 +327,11 @@ export const LogsInsightsPanel = (props: ChartSectionProps) => {
         ? buildEsQuery(undefined, [], existingFilters, getEsQueryConfig(services.uiSettings))
         : undefined;
 
+    // Abort any previous cohort breakdown request before starting a new one.
+    cohortBreakdownAbortRef.current?.abort();
+    const abortController = new AbortController();
+    cohortBreakdownAbortRef.current = abortController;
+
     setCohortBreakdownLoading(true);
 
     Promise.allSettled(
@@ -316,13 +339,14 @@ export const LogsInsightsPanel = (props: ChartSectionProps) => {
         getESQLResults({
           esqlQuery: buildCohortBreakdownQuery(indexPattern, topSpike.bucket, field),
           search: services.data.search.search,
-          signal: new AbortController().signal,
+          signal: abortController.signal,
           filter: userFilter,
           timeRange: spikeTimeRange,
           variables: fetchParams.esqlVariables ?? [],
         })
       )
     ).then((results) => {
+      if (abortController.signal.aborted) return;
       const breakdowns: Array<{ field: string; entries: Array<{ value: string; count: number }> }> =
         [];
       results.forEach((result, i) => {
@@ -330,6 +354,8 @@ export const LogsInsightsPanel = (props: ChartSectionProps) => {
         const entries: Array<{ value: string; count: number }> = [];
         for (const row of result.value.response.values) {
           const r = row as unknown[];
+          // Guard against unexpected column count changes in the ES|QL result shape.
+          if (r.length < 2) continue;
           const value = r[1];
           if (value !== null && value !== undefined) {
             entries.push({ count: r[0] as number, value: String(value) });
@@ -483,13 +509,10 @@ export const LogsInsightsPanel = (props: ChartSectionProps) => {
             results.map((result, i) => {
               if (result.status !== 'fulfilled') return null;
               const rows = result.value.response.values
-                .map((row) => {
+                .flatMap((row) => {
                   const r = row as unknown[];
-                  return {
-                    errors: r[0] as number,
-                    total: r[1] as number,
-                    value: String(r[2]),
-                  };
+                  if (r.length < 3) return [];
+                  return [{ errors: r[0] as number, total: r[1] as number, value: String(r[2]) }];
                 })
                 .filter((r) => r.value !== 'null' && r.value !== 'undefined');
               return { field: errorOutlierFields[i], rows };
@@ -555,6 +578,7 @@ export const LogsInsightsPanel = (props: ChartSectionProps) => {
         if (changePointResult.status === 'fulfilled') {
           for (const row of changePointResult.value.response.values) {
             const r = row as unknown[];
+            if (r.length < 3) continue;
             changePoints.push({
               record_count: r[0] as number,
               bucket: r[1] as string,
@@ -567,6 +591,7 @@ export const LogsInsightsPanel = (props: ChartSectionProps) => {
         if (patternsResult.status === 'fulfilled') {
           for (const row of patternsResult.value.response.values) {
             const r = row as unknown[];
+            if (r.length < 2) continue;
             patterns.push({ count: r[0] as number, category: r[1] as string });
           }
         }
@@ -577,6 +602,7 @@ export const LogsInsightsPanel = (props: ChartSectionProps) => {
           const byCategory = new Map<string, { current: number; previous: number }>();
           for (const row of crossPeriodResult.value.response.values) {
             const r = row as unknown[];
+            if (r.length < 3) continue;
             const count = Number(r[0]);
             const category = String(r[1]);
             const period = String(r[2]);
@@ -601,6 +627,7 @@ export const LogsInsightsPanel = (props: ChartSectionProps) => {
         if (outliersResult.status === 'fulfilled') {
           for (const row of outliersResult.value.response.values) {
             const r = row as unknown[];
+            if (r.length < 2) continue;
             outliers.push({ count: r[0] as number, category: r[1] as string });
           }
         }
@@ -609,6 +636,7 @@ export const LogsInsightsPanel = (props: ChartSectionProps) => {
         if (errorRateResult.status === 'fulfilled' && errorRateResult.value !== null) {
           for (const row of errorRateResult.value.response.values) {
             const r = row as unknown[];
+            if (r.length < 3) continue;
             errorChangePoints.push({
               record_count: r[0] as number,
               bucket: r[1] as string,
@@ -634,13 +662,10 @@ export const LogsInsightsPanel = (props: ChartSectionProps) => {
           patternErrorOutlierResult.value !== null
         ) {
           const rows = patternErrorOutlierResult.value.response.values
-            .map((row) => {
+            .flatMap((row) => {
               const r = row as unknown[];
-              return {
-                errors: r[0] as number,
-                total: r[1] as number,
-                category: String(r[2]),
-              };
+              if (r.length < 3) return [];
+              return [{ errors: r[0] as number, total: r[1] as number, category: String(r[2]) }];
             })
             .filter((r) => r.category !== 'null' && r.category !== 'undefined');
           patternErrorOutliers.push(...computePatternErrorOutliers(rows));
@@ -650,8 +675,9 @@ export const LogsInsightsPanel = (props: ChartSectionProps) => {
         let meanCount = 0;
         if (meanCountResult.status === 'fulfilled') {
           const rows = meanCountResult.value.response.values;
-          if (rows.length > 0) {
-            meanCount = ((rows[0] as unknown[])[0] as number) ?? 0;
+          const firstRow = rows[0] as unknown[] | undefined;
+          if (firstRow && firstRow.length >= 1) {
+            meanCount = (firstRow[0] as number) ?? 0;
           }
         }
         // Mean count failure is non-fatal — magnitude ratios simply won't render.
@@ -675,6 +701,9 @@ export const LogsInsightsPanel = (props: ChartSectionProps) => {
       abortController.abort();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
+    // fetchParams is an object that changes reference on every render; we list only the
+    // primitive/stable values that should actually trigger a new fetch rather than the
+    // whole object, which would cause an infinite re-run loop.
   }, [
     indexPattern,
     isComponentVisible,
@@ -936,7 +965,7 @@ export const LogsInsightsPanel = (props: ChartSectionProps) => {
               <EuiSpacer size="xs" />
               {errorOutliers.length > 0 ? (
                 <EuiFlexGroup wrap gutterSize="xs">
-                  {errorOutliers.slice(0, 8).map((outlier) => {
+                  {errorOutliers.slice(0, MAX_DISPLAYED_OUTLIERS).map((outlier) => {
                     const pct = Math.round(outlier.errorRate * 100);
                     const ratio = Math.round(outlier.errorRate / outlier.fleetErrorRate);
                     const label = COHORT_FIELD_LABELS[outlier.field] ?? outlier.field;
@@ -1004,7 +1033,7 @@ export const LogsInsightsPanel = (props: ChartSectionProps) => {
               <EuiSpacer size="xs" />
               {patternErrorOutliers.length > 0 ? (
                 <EuiFlexGroup wrap gutterSize="xs">
-                  {patternErrorOutliers.slice(0, 8).map((outlier) => {
+                  {patternErrorOutliers.slice(0, MAX_DISPLAYED_OUTLIERS).map((outlier) => {
                     const pct = Math.round(outlier.errorRate * 100);
                     const ratio = Math.round(outlier.errorRate / outlier.fleetErrorRate);
                     return (
