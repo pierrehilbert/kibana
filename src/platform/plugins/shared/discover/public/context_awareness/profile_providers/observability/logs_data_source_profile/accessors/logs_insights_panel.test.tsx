@@ -609,6 +609,140 @@ describe('LogsInsightsPanel', () => {
   });
 
   // -------------------------------------------------------------------------
+  // Cohort breakdown ("Show top contributors")
+  // -------------------------------------------------------------------------
+
+  it('shows top contributors breakdown when "Show top contributors" is clicked', async () => {
+    // service.name makes the button visible; log.level is needed for error-rate queries.
+    const dataViewWithService = {
+      id: 'test-dv',
+      getIndexPattern: () => 'logs-*',
+      timeFieldName: '@timestamp',
+      getFieldByName: (name: string) =>
+        name === 'log.level' || name === 'service.name' ? { name } : undefined,
+    };
+
+    mockGetESQLResults
+      .mockResolvedValueOnce(
+        asResult({ response: { values: [[100, '2025-01-01T00:30:00.000Z', 'spike']] } })
+      ) // [0] changePoint — triggers the callout
+      .mockResolvedValue(empty);
+
+    renderPanel({
+      fetchParams: makeFetchParams({
+        dataView: dataViewWithService as unknown as UnifiedHistogramFetchParams['dataView'],
+      }),
+    });
+
+    await waitFor(() =>
+      expect(screen.getByText('Show top contributors')).toBeInTheDocument()
+    );
+
+    // Queue the cohort breakdown response before clicking so it's ready when the query fires.
+    mockGetESQLResults.mockResolvedValueOnce(
+      asResult({ response: { values: [[42, 'payment-service']] } })
+    );
+
+    fireEvent.click(screen.getByText('Show top contributors'));
+
+    await waitFor(() => expect(screen.getByText(/payment-service \(42\)/)).toBeInTheDocument());
+  });
+
+  it('ignores cohort rows with fewer than 2 columns', async () => {
+    const dataViewWithService = {
+      id: 'test-dv',
+      getIndexPattern: () => 'logs-*',
+      timeFieldName: '@timestamp',
+      getFieldByName: (name: string) =>
+        name === 'log.level' || name === 'service.name' ? { name } : undefined,
+    };
+
+    mockGetESQLResults
+      .mockResolvedValueOnce(
+        asResult({ response: { values: [[100, '2025-01-01T00:30:00.000Z', 'spike']] } })
+      )
+      .mockResolvedValue(empty);
+
+    renderPanel({
+      fetchParams: makeFetchParams({
+        dataView: dataViewWithService as unknown as UnifiedHistogramFetchParams['dataView'],
+      }),
+    });
+
+    await waitFor(() =>
+      expect(screen.getByText('Show top contributors')).toBeInTheDocument()
+    );
+
+    // Row with only 1 column and a row with null count — both should be silently skipped.
+    mockGetESQLResults.mockResolvedValueOnce(
+      asResult({ response: { values: [['only-one-column'], [null, 'valid-service']] } })
+    );
+
+    fireEvent.click(screen.getByText('Show top contributors'));
+
+    // Neither bad row should appear; the section should simply stay hidden.
+    await waitFor(() => expect(screen.queryByText('Show top contributors')).not.toBeInTheDocument());
+    expect(screen.queryByText(/valid-service/)).not.toBeInTheDocument();
+  });
+
+  // -------------------------------------------------------------------------
+  // Log rate analysis flyout
+  // -------------------------------------------------------------------------
+
+  describe('Log rate analysis flyout', () => {
+    const mockLogRateAnalysisContent = jest.fn(() => (
+      <div>Log rate analysis content</div>
+    ));
+
+    beforeEach(() => {
+      mockLogRateAnalysisContent.mockClear();
+      jest.mocked(useDiscoverServices).mockReturnValue({
+        data: { query: { filterManager: { addFilters: mockAddFilters } } },
+        aiops: {
+          LogRateAnalysisContentComponent: mockLogRateAnalysisContent,
+          getPatternAnalysisAvailable: jest.fn(),
+          PatternAnalysisComponent: () => null,
+          ChangePointDetectionComponent: () => null,
+        },
+      } as unknown as ReturnType<typeof useDiscoverServices>);
+    });
+
+    it('opens the flyout when the "Log rate analysis" header button is clicked', async () => {
+      renderPanel();
+
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: 'Log rate analysis' })).toBeInTheDocument()
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: 'Log rate analysis' }));
+
+      await waitFor(() =>
+        expect(screen.getByText('Log rate analysis content')).toBeInTheDocument()
+      );
+    });
+
+    it('closes the flyout when the flyout close button is clicked', async () => {
+      renderPanel();
+
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: 'Log rate analysis' })).toBeInTheDocument()
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: 'Log rate analysis' }));
+
+      await waitFor(() =>
+        expect(screen.getByText('Log rate analysis content')).toBeInTheDocument()
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: /close this dialog/i }));
+
+      await waitFor(() =>
+        expect(screen.queryByText('Log rate analysis content')).not.toBeInTheDocument()
+      );
+    });
+  });
+
+  // -------------------------------------------------------------------------
   // Drill-down: error rate filter button
   // -------------------------------------------------------------------------
 

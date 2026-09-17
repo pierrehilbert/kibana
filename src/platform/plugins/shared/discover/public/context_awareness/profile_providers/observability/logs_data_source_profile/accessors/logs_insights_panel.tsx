@@ -356,9 +356,10 @@ export const LogsInsightsPanel = (props: ChartSectionProps) => {
           const r = row as unknown[];
           // Guard against unexpected column count changes in the ES|QL result shape.
           if (r.length < 2) continue;
+          const count = r[0];
           const value = r[1];
-          if (value !== null && value !== undefined) {
-            entries.push({ count: r[0] as number, value: String(value) });
+          if (count != null && value != null) {
+            entries.push({ count: count as number, value: String(value) });
           }
         }
         if (entries.length > 0) {
